@@ -1,0 +1,3 @@
+[submodule "NM_toolbox"]
+	path = NM_toolbox
+	url = git@github.com:LabNeuroCogDevel/NM_toolbox
