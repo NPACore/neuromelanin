@@ -1,0 +1,239 @@
+Only in Robby_NM_pipeline/NM_toolbox/: ANTs_Images
+diff -wBd NM_toolbox/ants_setup.m Robby_NM_pipeline/NM_toolbox/ants_setup.m
+32,38d31
+< 
+< %% confirm ANTs can be  run
+< [ants_status, ants_ver] = system('N4BiasFieldCorrection --version');
+< disp(ants_ver)
+< if ants_status ~= 0 || ~strfind(ants_ver, 'ANTs')
+<    error('N4BiasFieldCorrection failed to run from MATLAB! Is your ANTs install okay? check system(''ldd `which N4BiasFieldCorrection`'')')
+< end
+Only in Robby_NM_pipeline/NM_toolbox/: batch_bids_raw.m
+diff -wBd NM_toolbox/batch_calc_NM_MNI.m Robby_NM_pipeline/NM_toolbox/batch_calc_NM_MNI.m
+31c31
+< results{1,11} = 'CC Intensity (mean)';
+---
+> results{1,11} = 'CC Intensity (mode)';   % hist_mode -- used to compute CNR
+32a33
+> results{1,13} = 'CC Intensity (mean)';   % arithmetic mean
+44d44
+<         refsig_name = [PAR.nmdirs{sb,nm},'/refsig_',subj,'_',nm_name,'.txt'];
+46,49c46,47
+<         if ~exist(CNR_fname,'file') || ~exist(CNR_refname,'file')
+< 
+<             %% CC mask used to calc stats in addition to CNR map
+<             NM_file = spm_select('FPList', [PAR.nmdirs{sb,nm}],['^swmeanr' PAR.nmprefs '.*\.(img|nii)$']); % files that begin with swrmeanr then nmprefs (should be the smoothed, spatially normalized, mean, realigned NM images)
+---
+>         % Always load the NM image so CC_mean can be computed regardless of cache
+>         NM_file = spm_select('FPList', [PAR.nmdirs{sb,nm}],['^swmeanr' PAR.nmprefs '.*\.(img|nii)$']);
+51c49
+<             NM_img = spm_read_vols(NM_vol); % read header of NM image
+---
+>         NM_img  = spm_read_vols(NM_vol);
+54c52
+<             save(refsig_name, 'REF_signal', '-ascii', '-double')
+---
+>         CC_mean_val = mean(REF_signal, 'omitnan');  % arithmetic mean of CC
+56c54,56
+<             REF_val = hist_mode(REF_signal);
+---
+>         if ~exist(CNR_fname,'file') || ~exist(CNR_refname,'file')
+> 
+>             REF_val   = hist_mode(REF_signal);          % mode -- used to normalise CNR
+60,63c60,62
+<             %%Calculate CNR Map
+<             CNR_map = (NM_img - REF_val)/REF_val*100; % create the CNR map (intensity normalized to mode of reference region signal)
+<             % Write CNR map
+<             CNR_vol = NM_vol; % set header info
+---
+>             % Calculate CNR Map (normalised to mode of CC signal)
+>             CNR_map = (NM_img - REF_val)/REF_val*100;
+>             CNR_vol = NM_vol;
+107c106
+<         results{index+1,11} = REF_val;
+---
+>         results{index+1,11} = REF_val;       % CC mode (used for CNR normalisation)
+108a108
+>         results{index+1,13} = CC_mean_val;   % CC arithmetic mean
+112,113c112
+<    outdir = fileparts(outname);
+<    if ~exist(outdir,'dir'), mkdir(outdir); end
+---
+>    mkdir(fileparts(outname))
+118,120c117,118
+<    idv_res_i = size(results,1) - nm +1; % should be size(results,1) - PAR.nnm + 1; % b/c res(end:end,:) is last value??
+<    idv_res = cell2table(results(idv_res_i,:),'VariableNames', results(1,:));
+<    fprintf(['# writing i=' num2str(idv_res_i) ' to ' outname '.csv\n']);
+---
+>    idv_res_i = size(results,1) - nm; % should be size(results,1) - PAR.nnm + 1; % b/c res(end:end,:) is last value??
+>    idv_res = cell2table(results(idv_res_i:end,:),'VariableNames', results(1,:));
+126d122
+< %  otherwise running for one would overwrite run for all
+128d123
+< summary_outname = 'NM_Results'; % NM_Results.mat NM_Results.csv
+130,132c125,126
+<   final_mat = [summary_outname '.mat'];
+<   fprintf(['# writing all ' num2str(size(results,1)) ' results to ' final_mat '{.mat,.csv}\n']);
+<   save(final_mat, 'PAR', 'results')
+---
+>   outname = 'NM_Results'
+>   save([outname, '.mat'], 'PAR', 'results')
+134,138c128
+<   writetable(results_table,[summary_outname,'.csv'])
+< else
+<   disp(['!! Not writing summary file "' summary_outname '.mat" because we are running on too few. '...
+<        num2str(PAR.nsubs) ' subs <= 1. '...
+<        'Look to results in idv/NM_Results_*'])
+---
+>   writetable(results_table,[outname,'.csv'])
+Only in Robby_NM_pipeline/NM_toolbox/: batch_calc_NM_MNI_raw.m
+diff -wBd NM_toolbox/batch_create_QC_fig.m Robby_NM_pipeline/NM_toolbox/batch_create_QC_fig.m
+34,35c34,35
+<         pdfname = fullfile(PAR.root, PAR.subjects{sb}, ['NM_toolbox_output_' subj '_' nm_name '.pdf']);
+<         pdfname_all = fullfile(QCDir, ['NM_toolbox_output_', subj '_' nm_name '.pdf']);
+---
+>         pdfname = fullfile(PAR.root, PAR.subjects{sb}, ['NM_toolbox_output_' subj '.pdf']);
+>         pdfname_all = fullfile(QCDir, ['NM_toolbox_output_', subj '.pdf']);
+460c460
+<         saveas(h, pdfname_all);
+---
+> %        saveas(h, pdfname_all);
+diff -wBd NM_toolbox/batch_normalize_ANTs_optRedo.m Robby_NM_pipeline/NM_toolbox/batch_normalize_ANTs_optRedo.m
+47c47
+<     warp_t1(T1File,PAR.batchcode_which,PAR.ANTsBrainExtraction, masks.TemplateFile, redo, PAR.ssmethod)
+---
+>     warp_t1(T1File,PAR.batchcode_which,PAR.ANTsBrainExtraction, masks.TemplateFile, redo)
+diff -wBd NM_toolbox/batch_realign.m Robby_NM_pipeline/NM_toolbox/batch_realign.m
+54,62d53
+<         % remove MacOS Spotlight metadata cache files
+<         bad_idx = arrayfun(@(x) contains(x,'/._'), P);
+<         if any(bad_idx)
+<            fprintf('# NOTE: %d suspected "._*" MacOS Spotlight files in dataset! ignoring',...
+<               length(find(bad_idx)))
+<            P(bad_idx),
+<            P = P(~bad_idx);
+<         end
+< 
+diff -wBd NM_toolbox/default_par.m Robby_NM_pipeline/NM_toolbox/default_par.m
+42,46d41
+< PAR.ssmethod = 'ants';  % how to skull strip/do brain extraction
+<                         % see warp_t1 used by batch_normalize_ANTs_optRedo
+<                         % 'ants' or 'bet2'. Added to handle 7T INV2.
+<                         % where antsBrainExtraction fails
+< 
+Only in NM_toolbox/: docs
+Only in Robby_NM_pipeline/NM_toolbox/: .DS_Store
+Only in NM_toolbox/: find_basedir_for_mask.m
+diff -wBd NM_toolbox/find_subj_files.m Robby_NM_pipeline/NM_toolbox/find_subj_files.m
+24c24
+<     pattern = fullfile(root,subsess{sb},'anat',...
+---
+>     pattern = fullfile(root,subsess{sb},'nm_data',...
+33c33
+<       pattern = fullfile(root,subsess{sb},'anat',...
+---
+>       pattern = fullfile(root,subsess{sb},'nm_data',...
+Only in NM_toolbox/: .git
+Only in NM_toolbox/: .gitignore
+diff -wBd NM_toolbox/hist_mode.m Robby_NM_pipeline/NM_toolbox/hist_mode.m
+4,8d3
+<    
+<    % optionally, read data from ascii file. useful for testing against hist_mode.py
+<    if ischar(x)
+<       x=load(x);
+<    end
+10c5
+<    mode_i = dist(2).YData == max(dist(2).YData);
+---
+>    mode_i = dist(2).YData == max(dist(2).YData)
+Only in NM_toolbox/: hist_mode.py
+diff -wBd NM_toolbox/list_all_subses.m Robby_NM_pipeline/NM_toolbox/list_all_subses.m
+5,6c5,6
+<    [dir(fullfile(root,'sub-*','ses-*','anat',['*',nmfilter]))
+<     dir(fullfile(root,'sub-*',        'anat',['*',nmfilter]))];
+---
+>    [dir(fullfile(root,'sub-*','ses-*','nm_data',['*',nmfilter]))
+>     dir(fullfile(root,'sub-*',        'nm_data',['*',nmfilter]))];
+9c9
+<      @(f) regexprep(f.folder, ['.*' root '/?(.*)/anat$'],'$1'),...
+---
+>      @(f) regexprep(f.folder, ['.*' root '/?(.*)/nm_data$'],'$1'),...
+diff -wBd NM_toolbox/nm_bids.m Robby_NM_pipeline/NM_toolbox/nm_bids.m
+7c7
+<       fprintf("USAGE: nm_bds bids_dir output_dir [--bet2] [--mask_dir ANTs_Images/..] [--participant_labels sub-00/ses-01]\n")
+---
+>       fprintf("USAGE: nm_bds bids_dir output_dir [--mask_dir ANTs_Images] [--participant_labels sub-01/ses-01]\n")
+12,18c12,18
+<    % where are Masks/ and ANTs_Images/ folders?
+<    PAR.batchcode_which = find_basedir_for_mask(varargin{:});
+< 
+<    % skull strip method. esp for MP2RAGE/INV2 at 7 Tesla
+<    bet_idx = contains(varargin, '--bet2');
+<    if any(bet_idx)
+<       PAR_update.ssmethod = 'bet2';
+---
+>    % location of Images. working directory if not nm_bids on path. or specified
+>    PAR.batchcode_which = pwd;
+>    [nmres,nm_loc] = system('which nm_bids');
+>    if nmres==0; PAR.batchcode_which = fileparts(nm_loc); end
+>    mask_idx = contains('--mask_dir', varargin);
+>    if mask_idx
+>       PAR.batchcode_which = varargin{mask_idx+1};
+19a20
+>    PAR_update.batchcode_which = absdir(PAR.batchcode_which);
+22,24c23,25
+<    part_idx = contains(varargin, '--participant_labels');
+<    if any(part_idx)
+<       PAR_update.subjects = varargin(find(part_idx,1)+1:end);
+---
+>    part_idx = contains('--participant_labels', varargin);
+>    if part_idx
+>       PAR_update.subjects = varargin(part_idx+1:end);
+Only in NM_toolbox/: nm_bidsstandaloneApplication
+Only in NM_toolbox/: nm_proc.bash
+diff -wBd NM_toolbox/par_bids.m Robby_NM_pipeline/NM_toolbox/par_bids.m
+46c46
+<    nbidspath = length(PAR.bids_root);
+---
+>    nbidspath = length(PAR.bids_root)+2;
+diff -wBd NM_toolbox/readme.org Robby_NM_pipeline/NM_toolbox/readme.org
+7,15c7
+< A Columbia University Tech Ventures (Cassidy, Horga, Wengler) matlab toolbox for batch processing neuromelanin-sensitive MRI. This repo tracks changes to convert to pipeline to a BIDSApp.
+< 
+< Core features are ANTs alignment for ROI [[#masks][masks]] (CC, LC, SNc, SN, SNr, VTA) and a [[file:hist_mode.m][kernel histogram]] extracted reference value.
+< 
+< Use like =nm_bids('/bids/','/out/')= to make [[#outputs][output]] =/out/NM_results.csv= from [[#bids][BIDS input]].
+< 
+< [[file:./docs/NM_input_acq.png]]
+< [[file:./docs/NM_mask_and_output.png]]
+< 
+---
+> A matlab toolbox for batch processing Neuromelanin-Sensitive MRI
+31c23
+< matlab -r "nm_bids path/to/BIDS   output/NM_CNR;"
+---
+> matlab -r "batch_bids('path/to/BIDS', 'output/NM_CNR')"
+35,37d26
+< #
+< # for scripting a more robust maltab command might look like
+< #   matlab -nodisplay -r "try, nm_bids('/bids/','out/'); catch e; e, end; quit"
+69,70d57
+< 
+< [[file:./docs/NM_mask_and_output.png]]
+Common subdirectories: NM_toolbox/test and Robby_NM_pipeline/NM_toolbox/test
+diff -wBd NM_toolbox/warp_t1.m Robby_NM_pipeline/NM_toolbox/warp_t1.m
+2c2
+< function warp_t1(T1File_full, templatesdir, ANTsBrainExtraction, TemplateFile, redo, ssmethod)
+---
+> function warp_t1(T1File_full, templatesdir, ANTsBrainExtraction, TemplateFile, redo)
+63d62
+<     if strcmp('ants',ssmethod)
+70,77d68
+<     % 20251009WF - failing skullstrip on 7T MP2RAGE (and INV2)
+<     elseif strcmp('bet2',ssmethod)
+<        command = ['t1brain=' T1N4File '; '...
+<                   'pathT1='  T1Path   '; '...
+<                   'bet2 "$t1brain" "$pathT1/BrainExtractionBrain.nii.gz"'];
+<     else
+<        error(['unknown skullstrip method (ants or bet2) in smethod=' ssmethod '; check PAR.ssmethod'])
+<     end
